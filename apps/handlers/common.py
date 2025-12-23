@@ -156,9 +156,27 @@ async def back_to_main(callback: types.CallbackQuery):
 @router.callback_query(F.data == "rules")
 async def show_rules(callback: types.CallbackQuery):
     """Показать правила акции."""
+    from config.config import CHANNEL_INVITE_LINK, CHAT_INVITE_LINK
+    
+    # Формируем ссылку на канал
+    if CHANNEL_INVITE_LINK:
+        channel_link = f'<a href="{CHANNEL_INVITE_LINK}">канал</a>'
+    elif REQUIRED_CHANNEL.startswith('@'):
+        channel_link = f'<a href="https://t.me/{REQUIRED_CHANNEL.lstrip("@")}">{REQUIRED_CHANNEL}</a>'
+    else:
+        channel_link = "канал"
+    
+    # Формируем ссылку на чат
+    if CHAT_INVITE_LINK:
+        chat_link = f'<a href="{CHAT_INVITE_LINK}">чат</a>'
+    elif REQUIRED_CHAT.startswith('@'):
+        chat_link = f'<a href="https://t.me/{REQUIRED_CHAT.lstrip("@")}">{REQUIRED_CHAT}</a>'
+    else:
+        chat_link = "чат"
+    
     rules_text = (
         "📜 <b>Правила акции:</b>\n\n"
-        f"1. Подпишитесь на {REQUIRED_CHANNEL} и {REQUIRED_CHAT}\n"
+        f"1. Подпишитесь на {channel_link} и {chat_link}\n"
         "2. Оставьте одно новогоднее пожелание и получите билет 🎫\n"
         "3. Приглашайте друзей по своей реферальной ссылке\n"
         "4. За каждого друга, который оставит пожелание, вы получите +1 билет 🎫\n"
