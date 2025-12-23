@@ -18,12 +18,13 @@ async def show_tickets(callback: types.CallbackQuery):
         await callback.answer("Ошибка: пользователь не найден.", show_alert=True)
         return
 
-    ref_count = await db.get_referral_count(callback.from_user.id)
+    total_referrals = await db.get_total_referrals(callback.from_user.id)
+    active_referrals = await db.get_referral_count(callback.from_user.id)
     link = await create_start_link(callback.bot, str(callback.from_user.id), encode=True)
     
     text = (
         f"🎫 <b>Ваши билеты:</b> {user['tickets']}\n"
-        f"👥 <b>Приглашено друзей:</b> {ref_count}\n\n"
+        f"👥 <b>Приглашено друзей:</b> {total_referrals} ({active_referrals} оставили пожелание)\n\n"
         f"🔗 <b>Ваша реферальная ссылка:</b>\n<code>{link}</code>\n\n"
         "Отправьте её друзьям! За каждого приглашённого друга, "
         "который оставит пожелание, вы получите +1 билет 🎁"

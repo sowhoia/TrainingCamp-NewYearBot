@@ -170,9 +170,20 @@ class Database:
                 return await cursor.fetchone()
 
     async def get_referral_count(self, user_id: int):
+        """Получить количество рефералов, которые оставили пожелание (дают билеты)."""
         async with aiosqlite.connect(self.db_path) as db:
             async with db.execute(
                 "SELECT COUNT(*) FROM users WHERE referrer_id = ? AND has_wished = TRUE", 
+                (user_id,)
+            ) as cursor:
+                row = await cursor.fetchone()
+                return row[0] if row else 0
+    
+    async def get_total_referrals(self, user_id: int):
+        """Получить общее количество приглашённых пользователей (включая тех, кто не оставил пожелание)."""
+        async with aiosqlite.connect(self.db_path) as db:
+            async with db.execute(
+                "SELECT COUNT(*) FROM users WHERE referrer_id = ?", 
                 (user_id,)
             ) as cursor:
                 row = await cursor.fetchone()
