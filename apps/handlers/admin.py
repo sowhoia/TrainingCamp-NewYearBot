@@ -5,6 +5,7 @@ from aiogram import Router, types, F
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
+from aiogram.enums import ChatType
 
 from config.config import ADMIN_IDS
 from data.database import db
@@ -22,7 +23,7 @@ def is_admin(user_id: int) -> bool:
     return user_id in ADMIN_IDS
 
 
-@router.message(Command("admin"), F.from_user.id.in_(ADMIN_IDS))
+@router.message(Command("admin"), F.from_user.id.in_(ADMIN_IDS), F.chat.type == ChatType.PRIVATE)
 async def cmd_admin(message: types.Message):
     """Админ-панель с статистикой и меню."""
     users_count = await db.get_users_count()
@@ -71,11 +72,26 @@ async def process_post_link(message: types.Message, state: FSMContext):
     """Обработка ссылки на пост."""
     text = message.text.strip()
     
-    # Парсим ссылку формата https://t.me/c/XXXXXXXXXX/XXX
-    match = re.search(r't\.me/c/(\d+)/(\d+)', text)
+    message_id = None
     
-    if match:
-        message_id = int(match.group(2))
+    # Паттерн 1: Приватная ссылка - t.me/c/CHAT_ID/MESSAGE_ID
+    match_private = re.search(r't\.me/c/(\d+)/(\d+)', text)
+    
+    # Паттерн 2: Публичная ссылка - t.me/username/MESSAGE_ID
+    match_public = re.search(r't\.me/([a-zA-Z_][a-zA-Z0-9_]*)/(\d+)', text)
+    
+    if match_private:
+        message_id = int(match_private.group(2))
+    elif match_public:
+        message_id = int(match_public.group(2))
+    else:
+        # Пробуем как просто ID
+        try:
+            message_id = int(text)
+        except ValueError:
+            pass
+    
+    if message_id:
         await db.set_reply_message_id(message_id)
         await message.answer(
             f"✅ Пост для комментариев установлен!\n"
@@ -84,20 +100,6 @@ async def process_post_link(message: types.Message, state: FSMContext):
         )
         await state.clear()
         return
-    
-    # Пробуем как просто ID
-    try:
-        message_id = int(text)
-        await db.set_reply_message_id(message_id)
-        await message.answer(
-            f"✅ Пост для комментариев установлен!\n"
-            f"ID сообщения: <code>{message_id}</code>",
-            parse_mode="HTML"
-        )
-        await state.clear()
-        return
-    except ValueError:
-        pass
     
     await message.answer(
         "❌ Не удалось распознать ссылку или ID.\n"
@@ -240,10 +242,72 @@ async def export_txt(callback: types.CallbackQuery):
 
 
 # Обратная совместимость с командой /export
-@router.message(Command("export"), F.from_user.id.in_(ADMIN_IDS))
+@router.message(Command("export"), F.from_user.id.in_(ADMIN_IDS), F.chat.type == ChatType.PRIVATE)
 async def export_command(message: types.Message):
     """Альтернативный доступ к экспорту через команду."""
     await message.answer(
         "📁 Выберите формат экспорта:",
         reply_markup=get_admin_export_menu()
     )
+
+
+@router.message(F.forward_from_chat, F.from_user.id.in_(ADMIN_IDS), F.chat.type == ChatType.PRIVATE)
+async def handle_forwarded_wish(message: types.Message):
+    """Сброс пожелания при пересылке сообщения из чата."""
+    if not message.text:
+        return
+    
+    # Парсим текст пожелания из пересланного сообщения
+    # Формат: "🎄 Новогоднее пожелание от @username:\n<blockquote>текст</blockquote>"
+    import html
+    
+    wish_text = None
+    text = message.text or message.caption or ""
+    
+    # Пробуем найти blockquote через HTML entities
+    if message.html_text:
+        match = re.search(r'<blockquote>(.*?)</blockquote>', message.html_text, re.DOTALL)
+        if match:
+            wish_text = html.unescape(match.group(1)).strip()
+    
+    # Если blockquote не найден, пробуем найти текст после первой строки
+    if not wish_text:
+        lines = text.split('\n', 1)
+        if len(lines) > 1 and "пожелание от" in lines[0].lower():
+            wish_text = lines[1].strip()
+    
+    if not wish_text:
+        await message.answer(
+            "❌ Не удалось распознать пожелание.\n"
+            "Убедитесь, что пересылаете сообщение с пожеланием из чата."
+        )
+        return
+    
+    wish = await db.find_wish_by_text(wish_text)
+    if not wish:
+        await message.answer(
+            f"❌ Пожелание не найдено в базе данных.\n"
+            f"Текст: <i>{wish_text[:100]}...</i>" if len(wish_text) > 100 else f"Текст: <i>{wish_text}</i>",
+            parse_mode="HTML"
+        )
+        return
+    
+    user = await db.get_user(wish['user_id'])
+    success = await db.reset_wish(wish['user_id'])
+    
+    if success:
+        username_display = f"@{user['username']}" if user and user['username'] else f"ID: {wish['user_id']}"
+        referrer_info = ""
+        if user and user['referrer_id']:
+            referrer_info = f"\n👤 Реферер: <code>{user['referrer_id']}</code> (−1 билет)"
+        
+        await message.answer(
+            f"✅ Пожелание сброшено!\n\n"
+            f"👤 Пользователь: {username_display}\n"
+            f"🆔 User ID: <code>{wish['user_id']}</code>\n"
+            f"🎫 Билет изъят (−1){referrer_info}",
+            parse_mode="HTML"
+        )
+    else:
+        await message.answer("❌ Ошибка при сбросе пожелания.")
+

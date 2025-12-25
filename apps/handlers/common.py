@@ -2,6 +2,7 @@ from aiogram import Router, types, F
 from aiogram.filters import CommandStart
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, FSInputFile
 from aiogram.utils.deep_linking import decode_payload
+from aiogram.enums import ChatType
 import logging
 
 from config.config import MAIN_IMAGE, RULES_IMAGE, REQUIRED_CHANNEL, REQUIRED_CHAT
@@ -13,7 +14,7 @@ router = Router()
 logger = logging.getLogger(__name__)
 
 
-@router.message(CommandStart())
+@router.message(CommandStart(), F.chat.type == ChatType.PRIVATE)
 async def cmd_start(message: types.Message):
     """Обработчик команды /start с поддержкой реферальных ссылок."""
     args = message.text.split()

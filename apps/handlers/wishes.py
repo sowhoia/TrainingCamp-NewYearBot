@@ -1,14 +1,16 @@
+import logging
 from aiogram import Router, types, F
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import FSInputFile
 
-from config.config import CONGRAT_IMAGE
+from config.config import CONGRAT_IMAGE, CHAT_ID
 from data.database import db
 from utils.keyboards.inline import get_back_button
 from utils.subscription import check_subscription, get_subscription_keyboard, get_subscription_text
 
 router = Router()
+logger = logging.getLogger(__name__)
 
 
 class WishState(StatesGroup):
@@ -78,6 +80,25 @@ async def process_wish(message: types.Message, state: FSMContext):
     success = await db.add_wish(message.from_user.id, message.text)
     
     if success:
+        # Публикуем пожелание в чат немедленно
+        if CHAT_ID:
+            username = f"@{message.from_user.username}" if message.from_user.username else f"ID: {message.from_user.id}"
+            wish_text = (
+                f"🎄 Новогоднее пожелание от {username}:\n"
+                f"<blockquote>{message.text}</blockquote>"
+            )
+            reply_to = await db.get_reply_message_id()
+            try:
+                await message.bot.send_message(
+                    CHAT_ID, 
+                    wish_text, 
+                    parse_mode="HTML",
+                    reply_to_message_id=reply_to
+                )
+                logger.info(f"Пожелание от {username} опубликовано в чат")
+            except Exception as e:
+                logger.error(f"Ошибка публикации пожелания в чат: {e}")
+        
         congrat_text = (
             "🎄 <b>Твоё пожелание сохранено!</b>\n\n"
             "Ты получил +1 билет 🎫\n"

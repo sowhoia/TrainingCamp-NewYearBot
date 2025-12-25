@@ -226,5 +226,51 @@ class Database:
                 row = await cursor.fetchone()
                 return row[0] if row else 0
 
+    async def find_wish_by_text(self, text: str):
+        """Найти пожелание по тексту."""
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute(
+                "SELECT * FROM wishes WHERE text = ?", (text,)
+            ) as cursor:
+                return await cursor.fetchone()
+
+    async def reset_wish(self, user_id: int) -> bool:
+        """Сбросить пожелание пользователя и забрать билеты атомарно."""
+        async with aiosqlite.connect(self.db_path) as db:
+            await db.execute("BEGIN IMMEDIATE")
+            try:
+                db.row_factory = aiosqlite.Row
+                async with db.execute(
+                    "SELECT * FROM users WHERE user_id = ?", (user_id,)
+                ) as cursor:
+                    user = await cursor.fetchone()
+                
+                if not user or not user['has_wished']:
+                    await db.execute("ROLLBACK")
+                    return False
+                
+                # Удаляем пожелание
+                await db.execute("DELETE FROM wishes WHERE user_id = ?", (user_id,))
+                
+                # Забираем 1 билет у пользователя
+                await db.execute(
+                    "UPDATE users SET tickets = MAX(0, tickets - 1), has_wished = FALSE WHERE user_id = ?",
+                    (user_id,)
+                )
+                
+                # Забираем 1 билет у реферера если есть
+                if user['referrer_id']:
+                    await db.execute(
+                        "UPDATE users SET tickets = MAX(0, tickets - 1) WHERE user_id = ?",
+                        (user['referrer_id'],)
+                    )
+                
+                await db.execute("COMMIT")
+                return True
+            except Exception:
+                await db.execute("ROLLBACK")
+                raise
+
 
 db = Database(str(DB_PATH))

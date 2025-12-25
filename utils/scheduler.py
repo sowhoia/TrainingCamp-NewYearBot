@@ -48,16 +48,17 @@ async def broadcast_random_wish(bot: Bot) -> None:
 
 
 def setup_scheduler(bot: Bot):
-    """Создаёт задачу с случайным интервалом 15-30 минут."""
-    async def random_scheduler_loop():
-        # Начальная задержка перед первой публикацией
-        initial_delay = random.randint(5 * 60, 10 * 60)
+    """Создаёт задачу для публикации случайного пожелания каждый час."""
+    async def hourly_scheduler_loop():
+        # Начальная задержка - 1 час
+        initial_delay = 60 * 60
+        logger.info(f"Планировщик запущен. Первое рандомное пожелание через 1 час.")
         await asyncio.sleep(initial_delay)
         
         while True:
             await broadcast_random_wish(bot)
-            wait_time = random.randint(15 * 60, 30 * 60)
-            logger.info(f"Следующая публикация через {wait_time // 60} минут")
+            wait_time = 60 * 60  # 1 час
+            logger.info(f"Следующее рандомное пожелание через 1 час")
             await asyncio.sleep(wait_time)
 
-    return random_scheduler_loop
+    return hourly_scheduler_loop
