@@ -7,7 +7,7 @@ class SettingsRepository(BaseRepository):
     
     async def get_setting(self, key: str) -> str | None:
         """Get a setting value by key."""
-        async with await self._get_connection() as db:
+        async with self._get_connection() as db:
             async with db.execute(
                 "SELECT value FROM settings WHERE key = ?", (key,)
             ) as cursor:
@@ -16,7 +16,7 @@ class SettingsRepository(BaseRepository):
     
     async def set_setting(self, key: str, value: str):
         """Set a setting value."""
-        async with await self._get_connection() as db:
+        async with self._get_connection() as db:
             await db.execute(
                 "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
                 (key, value)
@@ -25,7 +25,7 @@ class SettingsRepository(BaseRepository):
     
     async def delete_setting(self, key: str):
         """Delete a setting."""
-        async with await self._get_connection() as db:
+        async with self._get_connection() as db:
             await db.execute("DELETE FROM settings WHERE key = ?", (key,))
             await db.commit()
     

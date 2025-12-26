@@ -12,7 +12,7 @@ class WishRepository(BaseRepository):
         Uses transaction to ensure data consistency.
         Returns True if wish added, False if user already has a wish.
         """
-        async with await self._get_connection() as db:
+        async with self._get_connection() as db:
             await db.execute("BEGIN IMMEDIATE")
             
             try:
@@ -58,7 +58,7 @@ class WishRepository(BaseRepository):
     
     async def get_user_wish(self, user_id: int):
         """Get user's wish."""
-        async with await self._get_connection() as db:
+        async with self._get_connection() as db:
             async with db.execute(
                 "SELECT * FROM wishes WHERE user_id = ?", (user_id,)
             ) as cursor:
@@ -66,7 +66,7 @@ class WishRepository(BaseRepository):
     
     async def get_random_wish(self):
         """Get a random wish with user info."""
-        async with await self._get_connection() as db:
+        async with self._get_connection() as db:
             async with db.execute("""
                 SELECT w.text, u.username, u.user_id 
                 FROM wishes w 
@@ -77,7 +77,7 @@ class WishRepository(BaseRepository):
     
     async def find_wish_by_text(self, text: str):
         """Find wish by exact text match."""
-        async with await self._get_connection() as db:
+        async with self._get_connection() as db:
             async with db.execute(
                 "SELECT * FROM wishes WHERE text = ?", (text,)
             ) as cursor:
@@ -85,7 +85,7 @@ class WishRepository(BaseRepository):
     
     async def reset_wish(self, user_id: int) -> bool:
         """Reset user's wish and deduct tickets atomically."""
-        async with await self._get_connection() as db:
+        async with self._get_connection() as db:
             await db.execute("BEGIN IMMEDIATE")
             try:
                 async with db.execute(

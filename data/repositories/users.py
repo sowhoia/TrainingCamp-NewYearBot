@@ -8,7 +8,7 @@ class UserRepository(BaseRepository):
     
     async def get_user(self, user_id: int):
         """Get user by ID."""
-        async with await self._get_connection() as db:
+        async with self._get_connection() as db:
             async with db.execute(
                 "SELECT * FROM users WHERE user_id = ?", (user_id,)
             ) as cursor:
@@ -19,7 +19,7 @@ class UserRepository(BaseRepository):
         
         Validates referrer exists before saving.
         """
-        async with await self._get_connection() as db:
+        async with self._get_connection() as db:
             # Validate referrer exists
             valid_referrer_id = None
             if referrer_id is not None:
@@ -37,7 +37,7 @@ class UserRepository(BaseRepository):
     
     async def update_username(self, user_id: int, username: str):
         """Update user's username."""
-        async with await self._get_connection() as db:
+        async with self._get_connection() as db:
             await db.execute(
                 "UPDATE users SET username = ? WHERE user_id = ?",
                 (username, user_id)
@@ -47,7 +47,7 @@ class UserRepository(BaseRepository):
     async def find_user_by_username(self, username: str):
         """Find user by username (case-insensitive, without @)."""
         clean_username = username.lstrip("@")
-        async with await self._get_connection() as db:
+        async with self._get_connection() as db:
             async with db.execute(
                 "SELECT * FROM users WHERE LOWER(username) = LOWER(?)", 
                 (clean_username,)
@@ -56,7 +56,7 @@ class UserRepository(BaseRepository):
     
     async def add_tickets_to_user(self, user_id: int, count: int) -> int | None:
         """Add tickets to user. Returns new ticket count or None if user not found."""
-        async with await self._get_connection() as db:
+        async with self._get_connection() as db:
             async with db.execute(
                 "SELECT * FROM users WHERE user_id = ?", (user_id,)
             ) as cursor:
@@ -77,7 +77,7 @@ class UserRepository(BaseRepository):
     
     async def get_referral_count(self, user_id: int) -> int:
         """Get count of referrals who have left a wish (earn tickets)."""
-        async with await self._get_connection() as db:
+        async with self._get_connection() as db:
             async with db.execute(
                 "SELECT COUNT(*) FROM users WHERE referrer_id = ? AND has_wished = TRUE", 
                 (user_id,)
@@ -87,7 +87,7 @@ class UserRepository(BaseRepository):
     
     async def get_total_referrals(self, user_id: int) -> int:
         """Get total count of invited users (regardless of wish status)."""
-        async with await self._get_connection() as db:
+        async with self._get_connection() as db:
             async with db.execute(
                 "SELECT COUNT(*) FROM users WHERE referrer_id = ?", 
                 (user_id,)

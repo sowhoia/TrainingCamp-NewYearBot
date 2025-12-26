@@ -1,5 +1,6 @@
 """Base repository with shared database connection logic."""
 import aiosqlite
+from contextlib import asynccontextmanager
 from config.config import DB_PATH
 
 
@@ -9,8 +10,9 @@ class BaseRepository:
     def __init__(self, db_path: str = None):
         self.db_path = db_path or str(DB_PATH)
     
-    async def _get_connection(self) -> aiosqlite.Connection:
-        """Get a new database connection."""
-        conn = await aiosqlite.connect(self.db_path)
-        conn.row_factory = aiosqlite.Row
-        return conn
+    @asynccontextmanager
+    async def _get_connection(self):
+        """Get a database connection as async context manager."""
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            yield db
