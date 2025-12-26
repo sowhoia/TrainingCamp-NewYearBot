@@ -5,8 +5,10 @@ from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.memory import MemoryStorage
 from config.config import BOT_TOKEN
 from data.database import db
-from apps.handlers import common, wishes, tickets, admin
-from utils.scheduler import setup_scheduler
+from apps.handlers import common, wishes, tickets
+from apps.handlers.admin import router as admin_router
+from utils.scheduler import setup_scheduler, check_and_run_missed_broadcast
+from utils.middlewares import ErrorHandlerMiddleware
 
 async def main():
     logging.basicConfig(
@@ -30,15 +32,24 @@ async def main():
     dp.include_router(common.router)
     dp.include_router(wishes.router)
     dp.include_router(tickets.router)
-    dp.include_router(admin.router)
+    dp.include_router(admin_router)
 
-    # Start scheduler
-    scheduler_task = setup_scheduler(bot)
-    asyncio.create_task(scheduler_task())
+    # Register middleware
+    dp.update.outer_middleware(ErrorHandlerMiddleware())
+
+    # Setup and start scheduler
+    scheduler = setup_scheduler(bot)
+    scheduler.start()
+    
+    # Check for missed broadcasts
+    await check_and_run_missed_broadcast(bot)
 
     # Start polling
     logging.info("Starting bot...")
-    await dp.start_polling(bot)
+    try:
+        await dp.start_polling(bot)
+    finally:
+        scheduler.shutdown()
 
 if __name__ == "__main__":
     try:

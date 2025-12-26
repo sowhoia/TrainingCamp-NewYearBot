@@ -1,12 +1,33 @@
+"""Database module with repository pattern.
+
+This module provides a unified Database class that:
+1. Initializes the database schema
+2. Exposes repository instances for different domains
+3. Maintains backwards compatibility via proxy methods
+"""
 import aiosqlite
 from config.config import DB_PATH
-from datetime import datetime
+
+from data.repositories.users import UserRepository
+from data.repositories.wishes import WishRepository
+from data.repositories.settings import SettingsRepository
+from data.repositories.stats import StatsRepository
+
 
 class Database:
-    def __init__(self, db_path: str):
-        self.db_path = db_path
-
+    """Main database class with repository access and backwards compatibility."""
+    
+    def __init__(self, db_path: str = None):
+        self.db_path = db_path or str(DB_PATH)
+        
+        # Initialize repositories
+        self.users = UserRepository(self.db_path)
+        self.wishes = WishRepository(self.db_path)
+        self.settings = SettingsRepository(self.db_path)
+        self.stats = StatsRepository(self.db_path)
+    
     async def init(self):
+        """Initialize database schema."""
         async with aiosqlite.connect(self.db_path) as db:
             await db.execute("""
                 CREATE TABLE IF NOT EXISTS users (
@@ -34,282 +55,93 @@ class Database:
                 )
             """)
             await db.commit()
-
-    async def get_setting(self, key: str) -> str | None:
-        """Получить значение настройки."""
-        async with aiosqlite.connect(self.db_path) as db:
-            async with db.execute(
-                "SELECT value FROM settings WHERE key = ?", (key,)
-            ) as cursor:
-                row = await cursor.fetchone()
-                return row[0] if row else None
-
-    async def set_setting(self, key: str, value: str):
-        """Установить значение настройки."""
-        async with aiosqlite.connect(self.db_path) as db:
-            await db.execute(
-                "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
-                (key, value)
-            )
-            await db.commit()
-
-    async def delete_setting(self, key: str):
-        """Удалить настройку."""
-        async with aiosqlite.connect(self.db_path) as db:
-            await db.execute("DELETE FROM settings WHERE key = ?", (key,))
-            await db.commit()
-
-    async def get_reply_message_id(self) -> int | None:
-        """Получить ID сообщения для комментариев."""
-        value = await self.get_setting("reply_message_id")
-        return int(value) if value else None
-
-    async def set_reply_message_id(self, message_id: int):
-        """Установить ID сообщения для комментариев."""
-        await self.set_setting("reply_message_id", str(message_id))
-
-    async def clear_reply_message_id(self):
-        """Очистить ID сообщения для комментариев."""
-        await self.delete_setting("reply_message_id")
-
-    async def get_user(self, user_id: int):
-        async with aiosqlite.connect(self.db_path) as db:
-            db.row_factory = aiosqlite.Row
-            async with db.execute("SELECT * FROM users WHERE user_id = ?", (user_id,)) as cursor:
-                return await cursor.fetchone()
-
-    async def create_user(self, user_id: int, username: str, referrer_id: int = None):
-        """Создать нового пользователя с реферером.
-        
-        Проверяет существование реферера перед сохранением.
-        """
-        async with aiosqlite.connect(self.db_path) as db:
-            # Проверяем существование реферера (если указан)
-            valid_referrer_id = None
-            if referrer_id is not None:
-                async with db.execute(
-                    "SELECT user_id FROM users WHERE user_id = ?", (referrer_id,)
-                ) as cursor:
-                    referrer_exists = await cursor.fetchone()
-                    if referrer_exists:
-                        valid_referrer_id = referrer_id
-            
-            await db.execute(
-                "INSERT OR IGNORE INTO users (user_id, username, referrer_id) VALUES (?, ?, ?)",
-                (user_id, username, valid_referrer_id)
-            )
-            await db.commit()
-
-    async def update_username(self, user_id: int, username: str):
-        """Обновить username пользователя."""
-        async with aiosqlite.connect(self.db_path) as db:
-            await db.execute(
-                "UPDATE users SET username = ? WHERE user_id = ?",
-                (username, user_id)
-            )
-            await db.commit()
-
-    async def add_wish(self, user_id: int, text: str):
-        """Добавить пожелание с атомарным начислением билетов.
-        
-        Использует транзакцию для гарантии консистентности данных.
-        Returns: True если пожелание добавлено, False если уже есть пожелание.
-        """
-        async with aiosqlite.connect(self.db_path) as db:
-            # Включаем режим транзакции
-            await db.execute("BEGIN IMMEDIATE")
-            
-            try:
-                # Получаем данные пользователя внутри транзакции
-                db.row_factory = aiosqlite.Row
-                async with db.execute(
-                    "SELECT * FROM users WHERE user_id = ?", (user_id,)
-                ) as cursor:
-                    user = await cursor.fetchone()
-                
-                if not user:
-                    await db.execute("ROLLBACK")
-                    return False
-                    
-                if user['has_wished']:
-                    await db.execute("ROLLBACK")
-                    return False
-                
-                # Сохраняем пожелание
-                await db.execute(
-                    "INSERT INTO wishes (user_id, text) VALUES (?, ?)", 
-                    (user_id, text)
-                )
-                
-                # Обновляем билеты и статус пользователя
-                await db.execute(
-                    "UPDATE users SET tickets = tickets + 1, has_wished = TRUE WHERE user_id = ?", 
-                    (user_id,)
-                )
-                
-                # Начисляем бонус рефереру (если есть и существует)
-                referrer_id = user['referrer_id']
-                if referrer_id:
-                    # Проверяем что реферер существует и начисляем билет
-                    await db.execute(
-                        "UPDATE users SET tickets = tickets + 1 WHERE user_id = ?", 
-                        (referrer_id,)
-                    )
-                
-                await db.execute("COMMIT")
-                return True
-                
-            except Exception as e:
-                await db.execute("ROLLBACK")
-                raise e
-
-    async def get_user_wish(self, user_id: int):
-        async with aiosqlite.connect(self.db_path) as db:
-            db.row_factory = aiosqlite.Row
-            async with db.execute("SELECT * FROM wishes WHERE user_id = ?", (user_id,)) as cursor:
-                return await cursor.fetchone()
-
-    async def get_referral_count(self, user_id: int):
-        """Получить количество рефералов, которые оставили пожелание (дают билеты)."""
-        async with aiosqlite.connect(self.db_path) as db:
-            async with db.execute(
-                "SELECT COUNT(*) FROM users WHERE referrer_id = ? AND has_wished = TRUE", 
-                (user_id,)
-            ) as cursor:
-                row = await cursor.fetchone()
-                return row[0] if row else 0
     
-    async def get_total_referrals(self, user_id: int):
-        """Получить общее количество приглашённых пользователей (включая тех, кто не оставил пожелание)."""
-        async with aiosqlite.connect(self.db_path) as db:
-            async with db.execute(
-                "SELECT COUNT(*) FROM users WHERE referrer_id = ?", 
-                (user_id,)
-            ) as cursor:
-                row = await cursor.fetchone()
-                return row[0] if row else 0
-
-    async def get_random_wish(self):
-        async with aiosqlite.connect(self.db_path) as db:
-            db.row_factory = aiosqlite.Row
-            async with db.execute("""
-                SELECT w.text, u.username, u.user_id 
-                FROM wishes w 
-                JOIN users u ON w.user_id = u.user_id 
-                ORDER BY RANDOM() LIMIT 1
-            """) as cursor:
-                return await cursor.fetchone()
-
-    async def get_all_participants_data(self):
-        async with aiosqlite.connect(self.db_path) as db:
-            db.row_factory = aiosqlite.Row
-            query = """
-                SELECT u.user_id, u.username, w.text, u.tickets
-                FROM users u
-                LEFT JOIN wishes w ON u.user_id = w.user_id
-                WHERE u.has_wished = TRUE
-            """
-            async with db.execute(query) as cursor:
-                return await cursor.fetchall()
-
-    async def get_users_count(self) -> int:
-        """Получить общее количество пользователей."""
-        async with aiosqlite.connect(self.db_path) as db:
-            async with db.execute("SELECT COUNT(*) FROM users") as cursor:
-                row = await cursor.fetchone()
-                return row[0] if row else 0
-
-    async def get_wishes_count(self) -> int:
-        """Получить количество оставленных пожеланий."""
-        async with aiosqlite.connect(self.db_path) as db:
-            async with db.execute("SELECT COUNT(*) FROM wishes") as cursor:
-                row = await cursor.fetchone()
-                return row[0] if row else 0
-
-    async def find_wish_by_text(self, text: str):
-        """Найти пожелание по тексту."""
-        async with aiosqlite.connect(self.db_path) as db:
-            db.row_factory = aiosqlite.Row
-            async with db.execute(
-                "SELECT * FROM wishes WHERE text = ?", (text,)
-            ) as cursor:
-                return await cursor.fetchone()
-
-    async def reset_wish(self, user_id: int) -> bool:
-        """Сбросить пожелание пользователя и забрать билеты атомарно."""
-        async with aiosqlite.connect(self.db_path) as db:
-            await db.execute("BEGIN IMMEDIATE")
-            try:
-                db.row_factory = aiosqlite.Row
-                async with db.execute(
-                    "SELECT * FROM users WHERE user_id = ?", (user_id,)
-                ) as cursor:
-                    user = await cursor.fetchone()
-                
-                if not user or not user['has_wished']:
-                    await db.execute("ROLLBACK")
-                    return False
-                
-                # Удаляем пожелание
-                await db.execute("DELETE FROM wishes WHERE user_id = ?", (user_id,))
-                
-                # Забираем 1 билет у пользователя
-                await db.execute(
-                    "UPDATE users SET tickets = MAX(0, tickets - 1), has_wished = FALSE WHERE user_id = ?",
-                    (user_id,)
-                )
-                
-                # Забираем 1 билет у реферера если есть
-                if user['referrer_id']:
-                    await db.execute(
-                        "UPDATE users SET tickets = MAX(0, tickets - 1) WHERE user_id = ?",
-                        (user['referrer_id'],)
-                    )
-                
-                await db.execute("COMMIT")
-                return True
-            except Exception:
-                await db.execute("ROLLBACK")
-                raise
-
-    async def get_bot_enabled(self) -> bool:
-        """Проверить, включен ли бот."""
-        value = await self.get_setting("bot_enabled")
-        return value != "false"  # По умолчанию включен
-
-    async def set_bot_enabled(self, enabled: bool):
-        """Установить статус бота (включен/выключен)."""
-        await self.set_setting("bot_enabled", "true" if enabled else "false")
-
-    async def get_last_broadcast_time(self) -> float | None:
-        """Получить время последней публикации (unix timestamp)."""
-        value = await self.get_setting("last_broadcast_time")
-        return float(value) if value else None
-
-    async def set_last_broadcast_time(self, timestamp: float):
-        """Установить время последней публикации."""
-        await self.set_setting("last_broadcast_time", str(timestamp))
-
+    # ==================== BACKWARDS COMPATIBILITY PROXIES ====================
+    # These methods proxy to the appropriate repository for backwards compatibility
+    # with existing handler code. New code should use db.users, db.wishes, etc.
+    
+    # --- User methods ---
+    async def get_user(self, user_id: int):
+        return await self.users.get_user(user_id)
+    
+    async def create_user(self, user_id: int, username: str, referrer_id: int = None):
+        return await self.users.create_user(user_id, username, referrer_id)
+    
+    async def update_username(self, user_id: int, username: str):
+        return await self.users.update_username(user_id, username)
+    
     async def find_user_by_username(self, username: str):
-        """Найти пользователя по username (без @)."""
-        clean_username = username.lstrip("@")
-        async with aiosqlite.connect(self.db_path) as db:
-            db.row_factory = aiosqlite.Row
-            async with db.execute(
-                "SELECT * FROM users WHERE LOWER(username) = LOWER(?)", (clean_username,)
-            ) as cursor:
-                return await cursor.fetchone()
-
+        return await self.users.find_user_by_username(username)
+    
+    async def add_tickets_to_user(self, user_id: int, count: int) -> int | None:
+        return await self.users.add_tickets_to_user(user_id, count)
+    
+    async def get_referral_count(self, user_id: int) -> int:
+        return await self.users.get_referral_count(user_id)
+    
+    async def get_total_referrals(self, user_id: int) -> int:
+        return await self.users.get_total_referrals(user_id)
+    
+    # --- Wish methods ---
+    async def add_wish(self, user_id: int, text: str) -> bool:
+        return await self.wishes.add_wish(user_id, text)
+    
+    async def get_user_wish(self, user_id: int):
+        return await self.wishes.get_user_wish(user_id)
+    
+    async def get_random_wish(self):
+        return await self.wishes.get_random_wish()
+    
+    async def find_wish_by_text(self, text: str):
+        return await self.wishes.find_wish_by_text(text)
+    
+    async def reset_wish(self, user_id: int) -> bool:
+        return await self.wishes.reset_wish(user_id)
+    
     async def reset_wish_by_username(self, username: str) -> dict | None:
-        """Сбросить пожелание по username. Возвращает данные пользователя если успешно."""
-        user = await self.find_user_by_username(username)
-        if not user:
-            return None
-        
-        success = await self.reset_wish(user['user_id'])
-        if success:
-            return dict(user)
-        return None
+        return await self.wishes.reset_wish_by_username(username)
+    
+    # --- Settings methods ---
+    async def get_setting(self, key: str) -> str | None:
+        return await self.settings.get_setting(key)
+    
+    async def set_setting(self, key: str, value: str):
+        return await self.settings.set_setting(key, value)
+    
+    async def delete_setting(self, key: str):
+        return await self.settings.delete_setting(key)
+    
+    async def get_reply_message_id(self) -> int | None:
+        return await self.settings.get_reply_message_id()
+    
+    async def set_reply_message_id(self, message_id: int):
+        return await self.settings.set_reply_message_id(message_id)
+    
+    async def clear_reply_message_id(self):
+        return await self.settings.clear_reply_message_id()
+    
+    async def get_bot_enabled(self) -> bool:
+        return await self.settings.get_bot_enabled()
+    
+    async def set_bot_enabled(self, enabled: bool):
+        return await self.settings.set_bot_enabled(enabled)
+    
+    async def get_last_broadcast_time(self) -> float | None:
+        return await self.settings.get_last_broadcast_time()
+    
+    async def set_last_broadcast_time(self, timestamp: float):
+        return await self.settings.set_last_broadcast_time(timestamp)
+    
+    # --- Stats methods ---
+    async def get_users_count(self) -> int:
+        return await self.stats.get_users_count()
+    
+    async def get_wishes_count(self) -> int:
+        return await self.stats.get_wishes_count()
+    
+    async def get_all_participants_data(self):
+        return await self.stats.get_all_participants_data()
 
 
+# Global database instance
 db = Database(str(DB_PATH))

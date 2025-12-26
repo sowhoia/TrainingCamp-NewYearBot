@@ -33,6 +33,8 @@ def get_admin_menu(bot_enabled: bool = True) -> InlineKeyboardMarkup:
             InlineKeyboardButton(text="📁 Экспорт", callback_data="admin_export"),
             InlineKeyboardButton(text="📨 Установить пост", callback_data="admin_set_post")
         ],
+        # Выдача билетов - на всю ширину
+        [InlineKeyboardButton(text="🎁 Выдать билеты", callback_data="admin_give_tickets")],
         # Управление пожеланиями и очистка поста - в 2 колонки
         [
             InlineKeyboardButton(text="🗑 Удалить пожелание", callback_data="admin_reset_wish"),
