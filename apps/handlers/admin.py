@@ -16,6 +16,7 @@ router = Router()
 
 class AdminState(StatesGroup):
     waiting_for_post_link = State()
+    waiting_for_username_to_reset = State()
 
 
 def is_admin(user_id: int) -> bool:
@@ -29,17 +30,20 @@ async def cmd_admin(message: types.Message):
     users_count = await db.get_users_count()
     wishes_count = await db.get_wishes_count()
     reply_id = await db.get_reply_message_id()
+    bot_enabled = await db.get_bot_enabled()
     
     post_status = f"✅ ID: {reply_id}" if reply_id else "❌ Не установлен"
+    bot_status = "🟢 Включен" if bot_enabled else "🔴 Выключен"
     
     await message.answer(
         f"👨‍💼 <b>Админ-панель</b>\n\n"
         f"📊 <b>Статистика:</b>\n"
         f"• Всего пользователей: {users_count}\n"
         f"• Оставлено пожеланий: {wishes_count}\n\n"
+        f"🤖 <b>Статус бота:</b> {bot_status}\n"
         f"💬 <b>Пост для комментариев:</b> {post_status}",
         parse_mode="HTML",
-        reply_markup=get_admin_menu()
+        reply_markup=get_admin_menu(bot_enabled)
     )
 
 
@@ -117,17 +121,20 @@ async def admin_cancel_input(callback: types.CallbackQuery, state: FSMContext):
     users_count = await db.get_users_count()
     wishes_count = await db.get_wishes_count()
     reply_id = await db.get_reply_message_id()
+    bot_enabled = await db.get_bot_enabled()
     
     post_status = f"✅ ID: {reply_id}" if reply_id else "❌ Не установлен"
+    bot_status = "🟢 Включен" if bot_enabled else "🔴 Выключен"
     
     await callback.message.edit_text(
         f"👨‍💼 <b>Админ-панель</b>\n\n"
         f"📊 <b>Статистика:</b>\n"
         f"• Всего пользователей: {users_count}\n"
         f"• Оставлено пожеланий: {wishes_count}\n\n"
+        f"🤖 <b>Статус бота:</b> {bot_status}\n"
         f"💬 <b>Пост для комментариев:</b> {post_status}",
         parse_mode="HTML",
-        reply_markup=get_admin_menu()
+        reply_markup=get_admin_menu(bot_enabled)
     )
 
 
@@ -140,15 +147,18 @@ async def admin_clear_post(callback: types.CallbackQuery):
     # Обновляем меню
     users_count = await db.get_users_count()
     wishes_count = await db.get_wishes_count()
+    bot_enabled = await db.get_bot_enabled()
+    bot_status = "🟢 Включен" if bot_enabled else "🔴 Выключен"
     
     await callback.message.edit_text(
         f"👨‍💼 <b>Админ-панель</b>\n\n"
         f"📊 <b>Статистика:</b>\n"
         f"• Всего пользователей: {users_count}\n"
         f"• Оставлено пожеланий: {wishes_count}\n\n"
+        f"🤖 <b>Статус бота:</b> {bot_status}\n"
         f"💬 <b>Пост для комментариев:</b> ❌ Не установлен",
         parse_mode="HTML",
-        reply_markup=get_admin_menu()
+        reply_markup=get_admin_menu(bot_enabled)
     )
 
 
@@ -158,17 +168,20 @@ async def admin_back(callback: types.CallbackQuery):
     users_count = await db.get_users_count()
     wishes_count = await db.get_wishes_count()
     reply_id = await db.get_reply_message_id()
+    bot_enabled = await db.get_bot_enabled()
     
     post_status = f"✅ ID: {reply_id}" if reply_id else "❌ Не установлен"
+    bot_status = "🟢 Включен" if bot_enabled else "🔴 Выключен"
     
     await callback.message.edit_text(
         f"👨‍💼 <b>Админ-панель</b>\n\n"
         f"📊 <b>Статистика:</b>\n"
         f"• Всего пользователей: {users_count}\n"
         f"• Оставлено пожеланий: {wishes_count}\n\n"
+        f"🤖 <b>Статус бота:</b> {bot_status}\n"
         f"💬 <b>Пост для комментариев:</b> {post_status}",
         parse_mode="HTML",
-        reply_markup=get_admin_menu()
+        reply_markup=get_admin_menu(bot_enabled)
     )
 
 
@@ -311,3 +324,94 @@ async def handle_forwarded_wish(message: types.Message):
     else:
         await message.answer("❌ Ошибка при сбросе пожелания.")
 
+
+@router.callback_query(F.data == "admin_toggle_bot", F.from_user.id.in_(ADMIN_IDS))
+async def admin_toggle_bot(callback: types.CallbackQuery):
+    """Переключить статус бота (вкл/выкл)."""
+    current_status = await db.get_bot_enabled()
+    new_status = not current_status
+    await db.set_bot_enabled(new_status)
+    
+    status_text = "🟢 включен" if new_status else "🔴 выключен"
+    await callback.answer(f"Бот {status_text}")
+    
+    # Обновляем меню
+    users_count = await db.get_users_count()
+    wishes_count = await db.get_wishes_count()
+    reply_id = await db.get_reply_message_id()
+    
+    post_status = f"✅ ID: {reply_id}" if reply_id else "❌ Не установлен"
+    bot_status = "🟢 Включен" if new_status else "🔴 Выключен"
+    
+    await callback.message.edit_text(
+        f"👨‍💼 <b>Админ-панель</b>\n\n"
+        f"📊 <b>Статистика:</b>\n"
+        f"• Всего пользователей: {users_count}\n"
+        f"• Оставлено пожеланий: {wishes_count}\n\n"
+        f"🤖 <b>Статус бота:</b> {bot_status}\n"
+        f"💬 <b>Пост для комментариев:</b> {post_status}",
+        parse_mode="HTML",
+        reply_markup=get_admin_menu(new_status)
+    )
+
+
+@router.callback_query(F.data == "admin_reset_wish", F.from_user.id.in_(ADMIN_IDS))
+async def admin_reset_wish_start(callback: types.CallbackQuery, state: FSMContext):
+    """Начать процесс удаления пожелания по username."""
+    await callback.answer()
+    await callback.message.edit_text(
+        "👤 <b>Введите username пользователя</b>\n\n"
+        "Можно с @ или без. Пример: <code>@username</code> или <code>username</code>\n\n"
+        "Пожелание будет удалено, билеты изъяты.",
+        parse_mode="HTML",
+        reply_markup=get_admin_cancel_button()
+    )
+    await state.set_state(AdminState.waiting_for_username_to_reset)
+
+
+@router.message(AdminState.waiting_for_username_to_reset, F.from_user.id.in_(ADMIN_IDS))
+async def process_username_to_reset(message: types.Message, state: FSMContext):
+    """Обработка username для сброса пожелания."""
+    username = message.text.strip()
+    
+    # Ищем пользователя
+    user = await db.find_user_by_username(username)
+    
+    if not user:
+        await message.answer(
+            f"❌ Пользователь <code>{username}</code> не найден.\n"
+            "Попробуйте ещё раз или нажмите «Отменить».",
+            parse_mode="HTML",
+            reply_markup=get_admin_cancel_button()
+        )
+        return
+    
+    if not user['has_wished']:
+        await message.answer(
+            f"❌ У пользователя <code>@{user['username']}</code> нет пожелания.\n"
+            "Попробуйте другого пользователя или нажмите «Отменить».",
+            parse_mode="HTML",
+            reply_markup=get_admin_cancel_button()
+        )
+        return
+    
+    # Сбрасываем пожелание
+    success = await db.reset_wish(user['user_id'])
+    
+    if success:
+        username_display = f"@{user['username']}" if user['username'] else f"ID: {user['user_id']}"
+        referrer_info = ""
+        if user['referrer_id']:
+            referrer_info = f"\n👤 Реферер: <code>{user['referrer_id']}</code> (−1 билет)"
+        
+        await message.answer(
+            f"✅ Пожелание сброшено!\n\n"
+            f"👤 Пользователь: {username_display}\n"
+            f"🆔 User ID: <code>{user['user_id']}</code>\n"
+            f"🎫 Билет изъят (−1){referrer_info}",
+            parse_mode="HTML"
+        )
+    else:
+        await message.answer("❌ Ошибка при сбросе пожелания.")
+    
+    await state.clear()

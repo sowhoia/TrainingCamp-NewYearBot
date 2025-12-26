@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import random
+import time
 from aiogram import Bot
 
 from config.config import CHAT_ID
@@ -8,9 +9,16 @@ from data.database import db
 
 logger = logging.getLogger(__name__)
 
+BROADCAST_INTERVAL = 60 * 60  # 1 час в секундах
+
 
 async def broadcast_random_wish(bot: Bot) -> None:
     """Публикует случайное пожелание в чат (или как комментарий к посту)."""
+    # Проверяем, включен ли бот
+    if not await db.get_bot_enabled():
+        logger.info("Бот отключен, пропускаем публикацию")
+        return
+    
     if not CHAT_ID:
         logger.warning("CHAT_ID не установлен, пропускаем публикацию")
         return
@@ -43,6 +51,9 @@ async def broadcast_random_wish(bot: Bot) -> None:
             # Отправляем как обычное сообщение
             await bot.send_message(CHAT_ID, text, parse_mode="HTML")
             logger.info(f"Опубликовано пожелание от {username}")
+        
+        # Сохраняем время публикации
+        await db.set_last_broadcast_time(time.time())
     except Exception as e:
         logger.error(f"Ошибка публикации пожелания: {e}")
 
@@ -50,15 +61,32 @@ async def broadcast_random_wish(bot: Bot) -> None:
 def setup_scheduler(bot: Bot):
     """Создаёт задачу для публикации случайного пожелания каждый час."""
     async def hourly_scheduler_loop():
-        # Начальная задержка - 1 час
-        initial_delay = 60 * 60
-        logger.info(f"Планировщик запущен. Первое рандомное пожелание через 1 час.")
-        await asyncio.sleep(initial_delay)
+        # Проверяем время последней публикации
+        last_broadcast = await db.get_last_broadcast_time()
+        current_time = time.time()
         
-        while True:
+        if last_broadcast:
+            elapsed = current_time - last_broadcast
+            remaining = BROADCAST_INTERVAL - elapsed
+            
+            if remaining > 0:
+                logger.info(f"Планировщик запущен. До следующего поста: {remaining / 60:.1f} мин")
+                await asyncio.sleep(remaining)
+            else:
+                # Пора публиковать сразу
+                logger.info("Планировщик запущен. Время публикации пропущено, публикуем сейчас.")
+                await broadcast_random_wish(bot)
+        else:
+            # Первый запуск - ждём час
+            logger.info(f"Планировщик запущен. Первое рандомное пожелание через 1 час.")
+            await asyncio.sleep(BROADCAST_INTERVAL)
             await broadcast_random_wish(bot)
-            wait_time = 60 * 60  # 1 час
+        
+        # Основной цикл
+        while True:
+            await asyncio.sleep(BROADCAST_INTERVAL)
+            await broadcast_random_wish(bot)
             logger.info(f"Следующее рандомное пожелание через 1 час")
-            await asyncio.sleep(wait_time)
 
     return hourly_scheduler_loop
+

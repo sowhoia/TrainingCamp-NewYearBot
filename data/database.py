@@ -272,5 +272,44 @@ class Database:
                 await db.execute("ROLLBACK")
                 raise
 
+    async def get_bot_enabled(self) -> bool:
+        """Проверить, включен ли бот."""
+        value = await self.get_setting("bot_enabled")
+        return value != "false"  # По умолчанию включен
+
+    async def set_bot_enabled(self, enabled: bool):
+        """Установить статус бота (включен/выключен)."""
+        await self.set_setting("bot_enabled", "true" if enabled else "false")
+
+    async def get_last_broadcast_time(self) -> float | None:
+        """Получить время последней публикации (unix timestamp)."""
+        value = await self.get_setting("last_broadcast_time")
+        return float(value) if value else None
+
+    async def set_last_broadcast_time(self, timestamp: float):
+        """Установить время последней публикации."""
+        await self.set_setting("last_broadcast_time", str(timestamp))
+
+    async def find_user_by_username(self, username: str):
+        """Найти пользователя по username (без @)."""
+        clean_username = username.lstrip("@")
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute(
+                "SELECT * FROM users WHERE LOWER(username) = LOWER(?)", (clean_username,)
+            ) as cursor:
+                return await cursor.fetchone()
+
+    async def reset_wish_by_username(self, username: str) -> dict | None:
+        """Сбросить пожелание по username. Возвращает данные пользователя если успешно."""
+        user = await self.find_user_by_username(username)
+        if not user:
+            return None
+        
+        success = await self.reset_wish(user['user_id'])
+        if success:
+            return dict(user)
+        return None
+
 
 db = Database(str(DB_PATH))

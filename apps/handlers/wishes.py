@@ -80,8 +80,9 @@ async def process_wish(message: types.Message, state: FSMContext):
     success = await db.add_wish(message.from_user.id, message.text)
     
     if success:
-        # Публикуем пожелание в чат немедленно
-        if CHAT_ID:
+        # Публикуем пожелание в чат немедленно (если бот включен)
+        bot_enabled = await db.get_bot_enabled()
+        if CHAT_ID and bot_enabled:
             username = f"@{message.from_user.username}" if message.from_user.username else f"ID: {message.from_user.id}"
             wish_text = (
                 f"🎄 Новогоднее пожелание от {username}:\n"
